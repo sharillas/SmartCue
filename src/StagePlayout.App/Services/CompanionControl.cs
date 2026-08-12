@@ -34,8 +34,12 @@ public sealed class CompanionControl : IDisposable
     public const int DefaultPort = 8010;
 
     private readonly OscReceiver _receiver;
+    private OscSender? _sender;
     private Thread? _thread;
     private volatile bool _running;
+    private readonly object _sendLock = new();
+    private string _sendHost = "127.0.0.1";
+    private int _sendPort = 8011;
 
     public event EventHandler? GoRequested;
     public event EventHandler? PauseRequested;
@@ -51,8 +55,46 @@ public sealed class CompanionControl : IDisposable
     public event EventHandler? MasterMuteToggleRequested;
     public event EventHandler<(int Layer, bool Muted)>? LayerMuteRequested;
     public event EventHandler<int>? LayerMuteToggleRequested;
+    public event EventHandler<int>? CueMuteToggleRequested;        // 1-based
+    public event EventHandler? PanicRequested;                     // eject all
 
     public int Port { get; }
+
+    /// <summary>
+    /// Envia o tempo restante para o Companion (feedback nos botões HH/MM/SS).
+    /// </summary>
+    public void SendRemainingTime(TimeSpan? remaining, string status)
+    {
+        var hh = remaining?.Hours ?? 0;
+        var mm = remaining?.Minutes ?? 0;
+        var ss = remaining?.Seconds ?? 0;
+        Send($"/smartcue/time/hh", hh);
+        Send($"/smartcue/time/mm", mm);
+        Send($"/smartcue/time/ss", ss);
+        Send($"/smartcue/time/total", remaining is { } r ? (long)r.TotalSeconds : 0L);
+        Send($"/smartcue/status", status);
+    }
+
+    private void Send(string address, object value)
+    {
+        try
+        {
+            lock (_sendLock)
+            {
+                if (_sender is null)
+                {
+                    _sender = new OscSender(IPAddress.Parse(_sendHost), _sendPort);
+                    _sender.Connect();
+                }
+                _sender.Send(new OscMessage(address, value));
+            }
+        }
+        catch
+        {
+            try { _sender?.Close(); } catch { }
+            _sender = null; // reconectar na próxima
+        }
+    }
 
     public CompanionControl(int port = DefaultPort)
     {
@@ -152,6 +194,13 @@ public sealed class CompanionControl : IDisposable
             case "/stageplayout/cue":
                 if (args.Length > 0 && ToInt(args[0], out var n))
                     PlayCueRequested?.Invoke(this, n);
+                break;
+            case "/stageplayout/cue/mute":
+                if (args.Length > 0 && ToInt(args[0], out var cm))
+                    CueMuteToggleRequested?.Invoke(this, cm);
+                break;
+            case "/stageplayout/panic":
+                PanicRequested?.Invoke(this, EventArgs.Empty);
                 break;
             case "/stageplayout/volume":
                 if (args.Length > 0 && ToDouble(args[0], out var v))

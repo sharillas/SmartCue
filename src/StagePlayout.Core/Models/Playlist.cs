@@ -6,6 +6,11 @@ public class Playlist
 {
     public ObservableCollection<Cue> Cues { get; } = new();
 
+    public Playlist()
+    {
+        Cues.CollectionChanged += (_, _) => Renumber();
+    }
+
     public int CurrentIndex { get; private set; } = -1;
 
     public Cue? Current =>
@@ -44,6 +49,12 @@ public class Playlist
         CurrentIndex = index;
         CurrentChanged?.Invoke(this, EventArgs.Empty);
         return Current;
+    }
+
+    public void Deselect()
+    {
+        CurrentIndex = -1;
+        CurrentChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
@@ -96,6 +107,7 @@ public class Playlist
             CurrentIndex = Cues.IndexOf(current);
 
         RefreshChildCounts();
+        Renumber();
     }
 
     // ===== Grupos / playlists =====
@@ -142,7 +154,18 @@ public class Playlist
             g.ChildCount = Cues.Count(c => c.ParentId == g.Id);
     }
 
-    public void Add(Cue cue) => Cues.Add(cue);
+    public void Add(Cue cue)
+    {
+        if (cue.DisplayId == 0) cue.DisplayId = Cue.NextDisplayId();
+        Cues.Add(cue);
+        Renumber();
+    }
+
+    public void Renumber()
+    {
+        for (int i = 0; i < Cues.Count; i++)
+            Cues[i].DisplayId = i + 1;
+    }
 
     public void Remove(Cue cue)
     {
@@ -150,5 +173,6 @@ public class Playlist
         Cues.Remove(cue);
         if (idx >= 0 && idx <= CurrentIndex)
             CurrentIndex = Math.Max(-1, CurrentIndex - 1);
+        Renumber();
     }
 }

@@ -2,55 +2,56 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:svgc="http://sharpvectors.codeplex.com/svgc/"
-        Title="StagePlayout" Height="680" Width="1180" MinHeight="480" MinWidth="980"
+        Title="SmartCue" Height="680" Width="1180" MinHeight="480" MinWidth="980"
         Background="{StaticResource BgBaseBrush}"
         Foreground="{StaticResource TextBrush}"
         FontFamily="Segoe UI" FontSize="13">
 
     <Window.Resources>
-        <!-- Menu de contexto para GRUPOS/playlists -->
+        <!-- Context menu for groups/playlists -->
         <ContextMenu x:Key="GroupMenu"
                      DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-            <MenuItem Header="Renomear..." Click="RenameGroup_Click"/>
-            <MenuItem Header="Repetir grupo (loop)" IsCheckable="True" IsChecked="{Binding LoopGroup}"/>
-            <MenuItem Header="Expandir / colapsar" Click="GroupToggleExpand_Click"/>
+            <MenuItem Header="Rename..." Click="RenameGroup_Click"/>
+            <MenuItem Header="Repeat group (loop)" IsCheckable="True" IsChecked="{Binding LoopGroup}"/>
+            <MenuItem Header="Expand / collapse" Click="GroupToggleExpand_Click"/>
             <Separator/>
-            <MenuItem Header="Desagrupar (manter clips)" Click="UngroupCue_Click"/>
-            <MenuItem Header="Remover grupo (manter clips)" Click="RemoveCue_Click"/>
+            <MenuItem Header="Ungroup (keep clips)" Click="UngroupCue_Click"/>
+            <MenuItem Header="Remove group (keep clips)" Click="RemoveCue_Click"/>
         </ContextMenu>
 
-        <!-- Menu de contexto por cue (loop / auto-continuar / remover) -->
+        <!-- Context menu for cue (loop / auto-continue / remove) -->
         <ContextMenu x:Key="CueMenu"
                      DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-            <MenuItem Header="No fim">
-                <MenuItem Header="Congelar no último frame" IsCheckable="True"
+            <MenuItem Header="On End">
+                <MenuItem Header="Hold last frame" IsCheckable="True"
                           IsChecked="{Binding End, Converter={StaticResource EqualsConverter}, ConverterParameter=HoldLastFrame}"/>
-                <MenuItem Header="Parar (fade out)" IsCheckable="True"
+                <MenuItem Header="Stop (fade out)" IsCheckable="True"
                           IsChecked="{Binding End, Converter={StaticResource EqualsConverter}, ConverterParameter=Stop}"/>
                 <MenuItem Header="Loop" IsCheckable="True"
                           IsChecked="{Binding End, Converter={StaticResource EqualsConverter}, ConverterParameter=Loop}"/>
-                <MenuItem Header="Auto-continuar" IsCheckable="True"
-                          IsChecked="{Binding End, Converter={StaticResource EqualsConverter}, ConverterParameter=AutoContinue}"/>
+                <MenuItem Header="Jump to cue" SubmenuOpened="JumpToCue_SubmenuOpened">
+                    <MenuItem Header="(loading...)"/>
+                </MenuItem>
             </MenuItem>
-            <MenuItem Header="Fade in">
-                <MenuItem Header="Sem fade" IsCheckable="True" IsChecked="{Binding FadeInSeconds, Converter={StaticResource EqualsConverter}, ConverterParameter=0}"/>
-                <MenuItem Header="0,5 s" IsCheckable="True" IsChecked="{Binding FadeInSeconds, Converter={StaticResource EqualsConverter}, ConverterParameter=0.5}"/>
+            <MenuItem Header="Fade In">
+                <MenuItem Header="No fade" IsCheckable="True" IsChecked="{Binding FadeInSeconds, Converter={StaticResource EqualsConverter}, ConverterParameter=0}"/>
+                <MenuItem Header="0.5 s" IsCheckable="True" IsChecked="{Binding FadeInSeconds, Converter={StaticResource EqualsConverter}, ConverterParameter=0.5}"/>
                 <MenuItem Header="1 s" IsCheckable="True" IsChecked="{Binding FadeInSeconds, Converter={StaticResource EqualsConverter}, ConverterParameter=1}"/>
                 <MenuItem Header="2 s" IsCheckable="True" IsChecked="{Binding FadeInSeconds, Converter={StaticResource EqualsConverter}, ConverterParameter=2}"/>
                 <MenuItem Header="3 s" IsCheckable="True" IsChecked="{Binding FadeInSeconds, Converter={StaticResource EqualsConverter}, ConverterParameter=3}"/>
                 <MenuItem Header="5 s" IsCheckable="True" IsChecked="{Binding FadeInSeconds, Converter={StaticResource EqualsConverter}, ConverterParameter=5}"/>
             </MenuItem>
-            <MenuItem Header="Fade out">
-                <MenuItem Header="Sem fade" IsCheckable="True" IsChecked="{Binding FadeOutSeconds, Converter={StaticResource EqualsConverter}, ConverterParameter=0}"/>
-                <MenuItem Header="0,5 s" IsCheckable="True" IsChecked="{Binding FadeOutSeconds, Converter={StaticResource EqualsConverter}, ConverterParameter=0.5}"/>
+            <MenuItem Header="Fade Out">
+                <MenuItem Header="No fade" IsCheckable="True" IsChecked="{Binding FadeOutSeconds, Converter={StaticResource EqualsConverter}, ConverterParameter=0}"/>
+                <MenuItem Header="0.5 s" IsCheckable="True" IsChecked="{Binding FadeOutSeconds, Converter={StaticResource EqualsConverter}, ConverterParameter=0.5}"/>
                 <MenuItem Header="1 s" IsCheckable="True" IsChecked="{Binding FadeOutSeconds, Converter={StaticResource EqualsConverter}, ConverterParameter=1}"/>
                 <MenuItem Header="2 s" IsCheckable="True" IsChecked="{Binding FadeOutSeconds, Converter={StaticResource EqualsConverter}, ConverterParameter=2}"/>
                 <MenuItem Header="3 s" IsCheckable="True" IsChecked="{Binding FadeOutSeconds, Converter={StaticResource EqualsConverter}, ConverterParameter=3}"/>
                 <MenuItem Header="5 s" IsCheckable="True" IsChecked="{Binding FadeOutSeconds, Converter={StaticResource EqualsConverter}, ConverterParameter=5}"/>
             </MenuItem>
             <Separator/>
-            <MenuItem Header="Agrupar seleção" Click="GroupSelection_Click"/>
-            <MenuItem Header="Remover cue" Click="RemoveCue_Click"/>
+            <MenuItem Header="Group to playlist" Click="GroupSelection_Click"/>
+            <MenuItem Header="Remove cue" Click="RemoveCue_Click"/>
         </ContextMenu>
 
         <Style x:Key="CueItemStyle" TargetType="ListBoxItem"
@@ -62,6 +63,63 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+
+        <!-- Modern Volume Slider -->
+        <Style x:Key="VolumeSliderStyle" TargetType="Slider">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid Height="20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Track x:Name="PART_Track" Grid.ColumnSpan="2" VerticalAlignment="Center" Height="4">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="Slider.DecreaseLarge">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Background="{StaticResource AccentBrush}" CornerRadius="2"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="Slider.IncreaseLarge">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Background="#404040" CornerRadius="2"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Width="14" Height="14" Cursor="Hand">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Ellipse Fill="#d0d0d0"
+                                                         Width="14" Height="14"/>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Dark theme ToolTip -->
+        <Style TargetType="ToolTip">
+            <Setter Property="Background" Value="{StaticResource BgElevatedBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
     </Window.Resources>
 
     <Grid Margin="16">
@@ -70,40 +128,54 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- ===== Top bar ===== -->
         <Grid Grid.Row="0" Margin="0,0,0,12">
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <svgc:SvgViewbox Source="pack://application:,,,/Assets/logo.svg"
-                                 Height="30" Margin="0,0,10,0"/>
-                <TextBlock Text="STAGE PLAYOUT" FontSize="18" FontWeight="SemiBold"/>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                <svgc:SvgViewbox Source="pack://application:,,,/Assets/app-icon.svg"
+                                 Height="36" Margin="0,0,8,0"/>
+                <StackPanel>
+                    <TextBlock Text="SmartCue" FontSize="36" FontWeight="Bold"
+                               FontFamily="pack://application:,,,/Assets/Fonts/#Megrim"/>
+                    <TextBlock Text="powered by smartchoice" FontSize="9"
+                               Foreground="{StaticResource TextMutedBrush}"/>
+                </StackPanel>
             </StackPanel>
 
             <!-- Timecode grande: tempo restante do clip no ar (fundo negro, dígitos largos) -->
-            <Border VerticalAlignment="Center" HorizontalAlignment="Center"
-                    Padding="30,2" CornerRadius="8"
-                    Background="Black"
-                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="RESTANTE" FontSize="11" FontWeight="SemiBold"
-                                   Foreground="{StaticResource TextMutedBrush}"
-                                   VerticalAlignment="Center" Margin="0,0,16,0"/>
-                    <TextBlock x:Name="TxtBigRemaining" Text="--:--:--"
-                                   FontFamily="Consolas" FontSize="38"
-                                   Foreground="{StaticResource TextMutedBrush}"
-                                   VerticalAlignment="Center"/>
-                </StackPanel>
-            </Border>
+            <Viewbox Grid.Column="1" Stretch="Uniform" MaxWidth="420" Margin="10,0">
+                <Border VerticalAlignment="Center" HorizontalAlignment="Center"
+                        Padding="30,2" CornerRadius="8"
+                        Background="Black"
+                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text=" Remaining Time: " FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       VerticalAlignment="Center" Margin="0,0,16,0"/>
+                        <TextBlock x:Name="TxtBigRemaining" Text="--:--:--"
+                                       FontFamily="Consolas" FontSize="38"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+            </Viewbox>
 
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button x:Name="BtnOpenProject" Content="Abrir"
+            <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="BtnOpenProject" Content=" Open Project "
                         Margin="0,0,8,0" Click="BtnOpenProject_Click"/>
-                <Button x:Name="BtnSaveProject" Content="Guardar"
+                <Button x:Name="BtnSaveProject" Content=" Save Project "
                         Margin="0,0,8,0" Click="BtnSaveProject_Click"/>
-                <Button x:Name="BtnAddMedia" Content="+ Adicionar media"
+                <Button x:Name="BtnAddMedia" Content=" Add Media "
                         Margin="0,0,8,0" Click="BtnAddMedia_Click"/>
-                <Button x:Name="BtnOutput" Content="Abrir output" Click="BtnOutput_Click"/>
+                <Button x:Name="BtnOutput" Content=" External Display ON " Click="BtnOutput_Click"/>
             </StackPanel>
         </Grid>
 
@@ -144,16 +216,30 @@
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
 
-                                <Border Grid.Column="0" Width="72" Height="40" CornerRadius="4"
-                                        Background="{StaticResource BgElevatedBrush}"
-                                        Margin="0,0,10,0">
-                                    <Border.Clip>
-                                        <RectangleGeometry Rect="0,0,72,40" RadiusX="4" RadiusY="4"/>
-                                    </Border.Clip>
-                                    <Image Source="{Binding Thumbnail, IsAsync=True}" Stretch="UniformToFill"/>
-                                </Border>
+                                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                    <Border Background="{Binding TagColor}" Width="6" CornerRadius="2,0,0,2"
+                                            Cursor="Hand" ToolTip="Right-click to change tag color"
+                                            MouseRightButtonDown="TagColor_RightClick" Tag="{Binding}"/>
+
+                                    <TextBlock Text="{Binding DisplayId}" Foreground="#888"
+                                               FontSize="10" VerticalAlignment="Center" Margin="6,0,6,0"
+                                               MinWidth="18" TextAlignment="Center"/>
+
+                                    <Border Width="62" Height="40" CornerRadius="4"
+                                            Background="{StaticResource BgElevatedBrush}"
+                                            Margin="0,0,10,0">
+                                        <Border.Clip>
+                                            <RectangleGeometry Rect="0,0,62,40" RadiusX="4" RadiusY="4"/>
+                                        </Border.Clip>
+                                        <Image Source="{Binding Thumbnail, IsAsync=True}"
+                                               Stretch="Uniform"
+                                               HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+                                    </Border>
+                                </StackPanel>
 
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                     <TextBlock Text="{Binding Name}" TextWrapping="Wrap"/>
@@ -161,12 +247,132 @@
                                                Foreground="{StaticResource TextMutedBrush}"
                                                TextTrimming="CharacterEllipsis"/>
                                     <ProgressBar Value="{Binding Progress}" Margin="0,4,0,0"
-                                               Visibility="{Binding IsLive, Converter={StaticResource BoolToVis}}"/>
+                                                Visibility="{Binding IsLive, Converter={StaticResource BoolToVis}}"/>
                                 </StackPanel>
 
                                 <TextBlock Grid.Column="2" Text="{Binding TimeText}"
                                            Foreground="{StaticResource TextMutedBrush}"
                                            VerticalAlignment="Center" Margin="12,0,0,0"/>
+
+                                <!-- Config indicators -->
+                                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0,0,0">
+                                    <svgc:SvgViewbox Source="pack://application:,,,/Assets/Icons/tabler-player-skip-forward.svg"
+                                                     Width="14" Height="14" Margin="0,0,4,0"
+                                                     Visibility="{Binding ShowHoldIcon, Converter={StaticResource BoolToVis}}"
+                                                     ToolTip="Hold last frame"/>
+                                    <svgc:SvgViewbox Source="pack://application:,,,/Assets/Icons/tabler-trending-down-2.svg"
+                                                     Width="14" Height="14" Margin="0,0,4,0"
+                                                     Visibility="{Binding ShowStopIcon, Converter={StaticResource BoolToVis}}"
+                                                     ToolTip="Stop on end"/>
+                                    <svgc:SvgViewbox Source="pack://application:,,,/Assets/Icons/tabler-reload.svg"
+                                                     Width="14" Height="14" Margin="0,0,4,0"
+                                                     Visibility="{Binding ShowLoopIcon, Converter={StaticResource BoolToVis}}"
+                                                     ToolTip="Loop"/>
+                                    <svgc:SvgViewbox Source="pack://application:,,,/Assets/Icons/tabler-corner-right-up-double.svg"
+                                                     Width="14" Height="14" Margin="0,0,2,0"
+                                                     Visibility="{Binding ShowJumpIcon, Converter={StaticResource BoolToVis}}"
+                                                     ToolTip="Jump to next cue"/>
+                                    <TextBlock Text="{Binding JumpTargetText}" FontSize="10" Foreground="#FF9800"
+                                               VerticalAlignment="Center" FontWeight="SemiBold"
+                                               Visibility="{Binding ShowJumpIcon, Converter={StaticResource BoolToVis}}"/>
+                                </StackPanel>
+
+                                <!-- Inline action buttons + output badge -->
+                                <StackPanel Grid.Column="4" Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center">
+                                    <Border Width="30" Height="26" CornerRadius="5" Background="#802E7D32"
+                                            Cursor="Hand" ToolTip="Play">
+                                        <Button Width="30" Height="26" Padding="0"
+                                                Background="Transparent" BorderThickness="0"
+                                                Click="InlinePlay_Click" Tag="{Binding}">
+                                            <svgc:SvgViewbox Source="pack://application:,,,/Assets/Icons/fa-audio-play.svg"
+                                                             Width="14" Height="14"/>
+                                        </Button>
+                                    </Border>
+                                    <Border Width="30" Height="26" CornerRadius="5" Background="#80C62828"
+                                            Margin="2,0" Cursor="Hand" ToolTip="Stop">
+                                        <Button Width="30" Height="26" Padding="0"
+                                                Background="Transparent" BorderThickness="0"
+                                                Click="InlineStop_Click" Tag="{Binding}">
+                                            <svgc:SvgViewbox Source="pack://application:,,,/Assets/Icons/fa-audio-stop.svg"
+                                                             Width="14" Height="14"/>
+                                        </Button>
+                                    </Border>
+                                    <Border Width="30" Height="26" CornerRadius="5" Background="#80E65100"
+                                            Cursor="Hand" ToolTip="Pause">
+                                        <Button Width="30" Height="26" Padding="0"
+                                                Background="Transparent" BorderThickness="0"
+                                                Click="InlinePause_Click" Tag="{Binding}">
+                                            <svgc:SvgViewbox Source="pack://application:,,,/Assets/Icons/fa-audio-pause.svg"
+                                                             Width="14" Height="14"/>
+                                        </Button>
+                                    </Border>
+                                    <Border Width="30" Height="26" CornerRadius="5" Background="#801565C0"
+                                            Margin="2,0,6,0" Cursor="Hand" ToolTip="Rewind">
+                                        <Button Width="30" Height="26" Padding="0"
+                                                Background="Transparent" BorderThickness="0"
+                                                Click="InlineRewind_Click" Tag="{Binding}">
+                                            <svgc:SvgViewbox Source="pack://application:,,,/Assets/Icons/fa-audio-backward.svg"
+                                                             Width="14" Height="14"/>
+                                        </Button>
+                                    </Border>
+                                    <Border Background="#333" CornerRadius="5" Width="36" Height="26" Cursor="Hand"
+                                            ToolTip="Right-click to change output"
+                                            MouseRightButtonDown="OutputBadge_RightClick" Tag="{Binding}">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <TextBlock Text="OUT " FontSize="10" Foreground="#888"
+                                                       VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding Output}" FontSize="10" FontWeight="SemiBold"
+                                                       Foreground="#FF9800" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Width="30" Height="26" CornerRadius="5" Background="#80333333"
+                                            Margin="3,0,0,0" Cursor="Hand"
+                                            ToolTip="Rotation: 0°/90°/180°/270°">
+                                        <Button Width="30" Height="26" Padding="0"
+                                                Background="Transparent" BorderThickness="0"
+                                                Click="InlineRotation_Click" Tag="{Binding}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <svgc:SvgViewbox Source="pack://application:,,,/Assets/Icons/rotation.svg"
+                                                                 Width="14" Height="14"/>
+                                                <TextBlock Text="{Binding RotationText}" FontSize="8"
+                                                           Foreground="#FF9800" VerticalAlignment="Center" Margin="1,0,0,0"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </Border>
+                                    <Border Width="28" Height="26" CornerRadius="5" Background="#80333333"
+                                            Margin="3,0,0,0" Cursor="Hand" ToolTip="Mute/Unmute&#x0a;Right-click: audio device">
+                                        <Button Width="28" Height="26" Padding="0"
+                                                Background="Transparent" BorderThickness="0"
+                                                Content="{Binding MuteIcon}" FontSize="11"
+                                                Foreground="White"
+                                                Click="InlineMute_Click"
+                                                MouseRightButtonDown="AudioOutput_RightClick" Tag="{Binding}"/>
+                                    </Border>
+                                    <Border Width="30" Height="26" CornerRadius="5" Background="#80333333"
+                                            Margin="3,0,0,0" Cursor="Hand"
+                                            ToolTip="Fill mode&#x0a;Click to toggle&#x0a;⊞ Fill | ⊡ Uniform">
+                                        <Button Width="30" Height="26" Padding="0"
+                                                Background="Transparent" BorderThickness="0"
+                                                Click="InlineFillMode_Click" Tag="{Binding}">
+                                            <svgc:SvgViewbox x:Name="FillModeFitIcon"
+                                                             Source="pack://application:,,,/Assets/Icons/fit-screen.svg"
+                                                             Width="14" Height="14"/>
+                                        </Button>
+                                    </Border>
+                                    <!-- Audio VU meter (L+R) -->
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="4,0,0,0"
+                                                Visibility="{Binding ShowAudioMeter, Converter={StaticResource BoolToVis}}">
+                                        <Border Width="6" Height="16" CornerRadius="2" Background="#333"
+                                                VerticalAlignment="Center" Margin="0,0,3,0">
+                                            <Border Height="{Binding AudioPeakL}" VerticalAlignment="Bottom"
+                                                    CornerRadius="2" Background="#4CAF50" MinHeight="2"/>
+                                        </Border>
+                                        <Border Width="6" Height="16" CornerRadius="2" Background="#333">
+                                            <Border Height="{Binding AudioPeakR}" VerticalAlignment="Bottom"
+                                                    CornerRadius="2" Background="#4CAF50" MinHeight="2"/>
+                                        </Border>
+                                    </StackPanel>
+                                </StackPanel>
                             </Grid>
                         </Grid>
                         <DataTemplate.Triggers>
@@ -296,21 +502,27 @@
                             Margin="6,0,0,0" Click="BtnStop_Click" IsEnabled="False"/>
 
                     <StackPanel Grid.Column="3" VerticalAlignment="Center" Margin="20,0,0,0">
-                        <TextBlock x:Name="TxtNowPlaying" Text="Nenhum cue carregado"
+                        <TextBlock x:Name="TxtNowPlaying" Text="No cue loaded"
                                    FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
                         <TextBlock x:Name="TxtTime" Text="--:--:-- / --:--:--"
                                    Foreground="{StaticResource TextMutedBrush}" Margin="0,2,0,0"/>
                     </StackPanel>
 
                     <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="VOL" Foreground="{StaticResource TextMutedBrush}"
-                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
-                        <Slider x:Name="VolumeSlider" Width="120" Minimum="0" Maximum="100"
-                                Value="100" VerticalAlignment="Center"
+                        <Button x:Name="BtnMasterMute" Content="&#x1F50A;"
+                                Width="28" Height="24" FontSize="13" Padding="0"
+                                Background="Transparent" Foreground="{StaticResource TextMutedBrush}"
+                                BorderThickness="0" Cursor="Hand"
+                                Click="MasterMute_Click"
+                                MouseRightButtonDown="MasterAudioDevice_RightClick"
+                                ToolTip="Master mute&#x0a;Right-click: audio device"/>
+                        <Slider x:Name="VolumeSlider" Width="100" Minimum="0" Maximum="100"
+                                Value="100" VerticalAlignment="Center" Margin="6,0"
+                                Style="{StaticResource VolumeSliderStyle}"
                                 ValueChanged="VolumeSlider_ValueChanged"/>
-                        <ToggleButton x:Name="BtnMasterMute" Content="SOM" IsChecked="True"
-                                      Margin="10,0,0,0" Click="MasterMute_Click"
-                                      ToolTip="Som da cue master"/>
+                        <TextBlock x:Name="TxtVolume" Text="100%" Width="34" TextAlignment="Right"
+                                   Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                                   VerticalAlignment="Center"/>
                     </StackPanel>
                 </Grid>
             </StackPanel>
@@ -319,5 +531,10 @@
         <!-- ===== Status bar ===== -->
         <TextBlock Grid.Row="3" x:Name="TxtStatus" Margin="2,10,2,0"
                    Foreground="{StaticResource TextMutedBrush}" Text="READY"/>
+
+        <!-- ===== Footer ===== -->
+        <TextBlock Grid.Row="4" HorizontalAlignment="Right" Margin="0,6,0,0"
+                   FontSize="10" Foreground="#999999"
+                   Text="Copyright @ 2026 Made by Nelson Teixeira"/>
     </Grid>
 </Window>

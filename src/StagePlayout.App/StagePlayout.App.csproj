@@ -30,6 +30,24 @@
 
   <ItemGroup>
     <Resource Include="Assets\logo.svg" />
+    <Resource Include="Assets\Icons\fa-audio-play.svg" />
+    <Resource Include="Assets\Icons\fa-audio-stop.svg" />
+    <Resource Include="Assets\Icons\fa-audio-pause.svg" />
+    <Resource Include="Assets\Icons\fa-audio-backward.svg" />
+    <Resource Include="Assets\Icons\tabler-player-stop.svg" />
+    <Resource Include="Assets\Icons\tabler-repeat.svg" />
+    <Resource Include="Assets\Icons\tabler-arrow-forward-up.svg" />
+    <Resource Include="Assets\Icons\tabler-player-pause.svg" />
+    <Resource Include="Assets\Icons\tabler-player-skip-forward.svg" />
+    <Resource Include="Assets\Icons\tabler-reload.svg" />
+    <Resource Include="Assets\Icons\tabler-device-ipad-horizontal-share.svg" />
+    <Resource Include="Assets\Icons\tabler-corner-right-up-double.svg" />
+    <Resource Include="Assets\Icons\tabler-trending-down-2.svg" />
+    <Resource Include="Assets\app-icon.svg" />
+    <Resource Include="Assets\Fonts\Megrim.ttf" />
+    <Resource Include="Assets\Icons\fit-screen.svg" />
+    <Resource Include="Assets\Icons\aspect-ratio.svg" />
+    <Resource Include="Assets\Icons\rotation.svg" />
   </ItemGroup>
 
   <ItemGroup>

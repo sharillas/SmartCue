@@ -40,6 +40,7 @@ public unsafe sealed class FFDecoder : IDisposable
     public byte[]? FrameData;
     public int FrameWidth, FrameHeight, FrameStride;
     public long FrameGen;
+    public float AudioPeakL, AudioPeakR;
 
     // ===== FFmpeg =====
     private AVFormatContext* _fmt;

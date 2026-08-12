@@ -49,6 +49,17 @@ public class Cue : INotifyPropertyChanged
     [JsonIgnore]
     public string ExpandGlyph => IsExpanded ? "▾" : "▸";
 
+    private static int _nextId = 1;
+    public static int NextDisplayId() => _nextId++;
+    public int DisplayId { get; set; }
+
+    private string _tagColor = "#555555";
+    public string TagColor
+    {
+        get => _tagColor;
+        set { _tagColor = value; OnPropertyChanged(); }
+    }
+
     private Guid? _parentId;
     public Guid? ParentId
     {
@@ -112,7 +123,7 @@ public class Cue : INotifyPropertyChanged
     public bool IsLive
     {
         get => _isLive;
-        set { _isLive = value; OnPropertyChanged(); }
+        set { _isLive = value; OnPropertyChanged(); OnPropertyChanged(nameof(ShowAudioMeter)); }
     }
 
     /// <summary>O que acontece quando o clip chega ao fim.</summary>
@@ -120,7 +131,13 @@ public class Cue : INotifyPropertyChanged
     public CueEnd End
     {
         get => _end;
-        set { _end = value; OnPropertyChanged(); }
+        set {
+            _end = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ShowStopIcon));
+            OnPropertyChanged(nameof(ShowLoopIcon));
+            OnPropertyChanged(nameof(ShowHoldIcon));
+        }
     }
 
     public double FadeInSeconds { get; set; } = 0.5;
@@ -128,6 +145,112 @@ public class Cue : INotifyPropertyChanged
 
     /// <summary>0.0 – 1.0</summary>
     public double Volume { get; set; } = 1.0;
+
+    /// <summary>Output screen index (1-based).</summary>
+    [JsonIgnore]
+    public int Output
+    {
+        get => _output;
+        set { _output = value; OnPropertyChanged(); }
+    }
+    private int _output = 2;
+
+    /// <summary>Audio muted for this cue.</summary>
+    [JsonIgnore]
+    public bool IsAudioMuted
+    {
+        get => _isAudioMuted;
+        set { _isAudioMuted = value; OnPropertyChanged(); OnPropertyChanged(nameof(MuteIcon)); }
+    }
+    private bool _isAudioMuted;
+
+    [JsonIgnore] public string MuteIcon => _isAudioMuted ? "\U0001F507" : "\U0001F50A";
+
+    /// <summary>Fill mode: Fill (stretch) or Uniform (keep aspect ratio with letterbox).</summary>
+    [JsonIgnore]
+    public string FillMode
+    {
+        get => _fillMode;
+        set { _fillMode = value; OnPropertyChanged(); OnPropertyChanged(nameof(FillModeIcon)); }
+    }
+    private string _fillMode = "Fill";
+
+    [JsonIgnore] public string FillModeIcon => _fillMode == "Uniform" ? "⊡" : "⊞";
+
+    /// <summary>Rotation angle: 0, 90, 180, or 270.</summary>
+    [JsonIgnore]
+    public int Rotation
+    {
+        get => _rotation;
+        set { _rotation = value; OnPropertyChanged(); OnPropertyChanged(nameof(RotationText)); }
+    }
+    private int _rotation = 0;
+
+    [JsonIgnore] public string RotationText => $"{_rotation}°";
+
+    /// <summary>True if this cue has an audio track.</summary>
+    [JsonIgnore]
+    public bool HasAudio
+    {
+        get => _hasAudio;
+        set { _hasAudio = value; OnPropertyChanged(); OnPropertyChanged(nameof(ShowAudioMeter)); }
+    }
+    private bool _hasAudio;
+
+    /// <summary>True if audio meter should be visible (has audio AND is live).</summary>
+    [JsonIgnore] public bool ShowAudioMeter => _hasAudio && IsLive;
+
+    /// <summary>Audio peak levels (0-1)</summary>
+    [JsonIgnore]
+    public double AudioPeakL
+    {
+        get => _audioPeakL;
+        set { _audioPeakL = value; OnPropertyChanged(); }
+    }
+    private double _audioPeakL;
+    [JsonIgnore]
+    public double AudioPeakR
+    {
+        get => _audioPeakR;
+        set { _audioPeakR = value; OnPropertyChanged(); }
+    }
+    private double _audioPeakR;
+
+    /// <summary>Audio output device ID (NAudio device ID). Empty = system default.</summary>
+    [JsonIgnore]
+    public string AudioOutputDevice
+    {
+        get => _audioOutputDevice;
+        set { _audioOutputDevice = value; OnPropertyChanged(); }
+    }
+    private string _audioOutputDevice = "";
+
+    /// <summary>ID of the cue to jump to when this one ends (0 = follow playlist order).</summary>
+    private Guid _nextCueId;
+    public Guid NextCueId
+    {
+        get => _nextCueId;
+        set { _nextCueId = value; OnPropertyChanged(); OnPropertyChanged(nameof(ShowJumpIcon)); }
+    }
+
+    [JsonIgnore] public bool ShowStopIcon => End == CueEnd.Stop;
+    [JsonIgnore] public bool ShowLoopIcon => End == CueEnd.Loop;
+    [JsonIgnore] public bool ShowJumpIcon => NextCueId != Guid.Empty;
+    [JsonIgnore] public bool ShowHoldIcon => End == CueEnd.HoldLastFrame;
+
+    [JsonIgnore]
+    public int JumpTargetId
+    {
+        get
+        {
+            // This can't easily reference the playlist; we'll set it externally
+            return _jumpTargetId;
+        }
+        set { _jumpTargetId = value; OnPropertyChanged(); OnPropertyChanged(nameof(JumpTargetText)); }
+    }
+    private int _jumpTargetId;
+
+    [JsonIgnore] public string JumpTargetText => _jumpTargetId > 0 ? _jumpTargetId.ToString() : "";
 
     private BitmapSource? _thumbnail;
     [JsonIgnore]

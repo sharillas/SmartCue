@@ -35,6 +35,8 @@ public sealed unsafe class D3DCompositor : IDisposable
     private ID3D11SamplerState? _sampler;
     private ID3D11BlendState? _blend;
     private int _width, _height;
+    public int OutputWidth => _width;
+    public int OutputHeight => _height;
 
     private readonly Slot[] _slots = { new(), new(), new(), new() };
     private int[] _drawOrder = { 0, 1, 2, 3 }; // layers (2,3) sempre por cima
@@ -53,6 +55,7 @@ public sealed unsafe class D3DCompositor : IDisposable
         public double LastAppliedVolume = -1;
         public float X, Y = 0, W = 1, H = 1;
         public float Z;
+        public float Rotation; // radians
         public long Gen;
         public ID3D11Texture2D? Tex;
         public ID3D11ShaderResourceView? Srv;
@@ -104,9 +107,14 @@ public sealed unsafe class D3DCompositor : IDisposable
     {
         lock (_apiLock)
         {
-            var s = _slots[slot];
-            s.X = x; s.Y = y; s.W = w; s.H = h;
+            _slots[slot].X = x; _slots[slot].Y = y;
+            _slots[slot].W = w; _slots[slot].H = h;
         }
+    }
+
+    public void SetRotation(int slot, float radians)
+    {
+        lock (_apiLock) _slots[slot].Rotation = radians;
     }
 
     /// <summary>Z-order dos slots de programa (layers têm prioridade fixa no topo).</summary>
@@ -164,17 +172,25 @@ public sealed unsafe class D3DCompositor : IDisposable
     }
 
     private const string VsSrc = @"
-cbuffer CB : register(b0) { float4 rect; float opacity; float3 pad; }
+cbuffer CB : register(b0) { float4 rect; float opacity; float rotation; float2 pad; }
 struct VSOut { float4 pos : SV_POSITION; float2 uv : TEXCOORD; };
 VSOut main(uint id : SV_VertexID)
 {
-    // quad em triangle list (6 verts): (0,0)(1,0)(0,1) + (1,0)(1,1)(0,1)
     float2 uv = float2((id == 1 || id == 3 || id == 4) ? 1.0 : 0.0,
                        (id >= 2 && id != 3) ? 1.0 : 0.0);
     VSOut o;
-    float2 p01 = uv * rect.zw + rect.xy;          // 0..1 (origem topo-esquerda)
+    // rotate UV around center if needed
+    float2 ruv = uv;
+    if (rotation != 0.0)
+    {
+        float s, c;
+        sincos(rotation, s, c);
+        float2 ctr = uv - 0.5;
+        ruv = float2(ctr.x * c - ctr.y * s + 0.5, ctr.x * s + ctr.y * c + 0.5);
+    }
+    float2 p01 = ruv * rect.zw + rect.xy;
     o.pos = float4(p01 * float2(2.0, -2.0) + float2(-1.0, 1.0), 0, 1);
-    o.uv = uv;
+    o.uv = uv; // keep original UVs for texture, position is rotated
     return o;
 }";
 
@@ -338,8 +354,8 @@ float4 main(VSOut i) : SV_TARGET
 
         if (s.Srv is null) return;
 
-        // constant buffer: rect + opacity
-        var cb = new CbData { X = s.X, Y = s.Y, W = s.W, H = s.H, Opacity = (float)s.Opacity };
+        // constant buffer: rect + opacity + rotation
+        var cb = new CbData { X = s.X, Y = s.Y, W = s.W, H = s.H, Opacity = (float)s.Opacity, Rotation = s.Rotation };
         var mapped = _ctx.Map(_cb!, 0, MapMode.WriteDiscard, Vortice.Direct3D11.MapFlags.None);
         *(CbData*)mapped.DataPointer = cb;
         _ctx.Unmap(_cb!, 0);
@@ -353,7 +369,8 @@ float4 main(VSOut i) : SV_TARGET
     {
         public float X, Y, W, H;       // rect (float4)
         public float Opacity;          // float
-        public float Pad0, Pad1, Pad2; // float3 pad
+        public float Rotation;         // float (radians)
+        public float Pad0, Pad1;       // float2 pad
     }
 
     private void EnsureTexture(Slot s, int w, int h)

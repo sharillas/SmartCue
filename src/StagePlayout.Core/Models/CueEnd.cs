@@ -12,6 +12,9 @@ public enum CueEnd
     /// <summary>Loop seamless (nativo do decoder).</summary>
     Loop,
 
+    /// <summary>Salta para um cue especifico definido manualmente.</summary>
+    JumpTo,
+
     /// <summary>Avança automaticamente para o cue seguinte.</summary>
     AutoContinue,
 }

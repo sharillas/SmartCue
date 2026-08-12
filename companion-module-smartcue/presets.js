@@ -1,0 +1,122 @@
+export function getPresets() {
+	const pad = (v) => String(v).padStart(2, '0')
+	return [
+		{
+			category: 'SmartCue',
+			name: 'Play cue',
+			type: 'button',
+			style: {
+				text: 'PLAY\\nCUE',
+				size: 'auto',
+				color: 0xffffff,
+				bgcolor: 0x2e7d32,
+			},
+			steps: [{ down: [{ actionId: 'playCue', options: { cueNumber: 1 } }], up: [] }],
+			feedbacks: [],
+		},
+		{
+			category: 'SmartCue',
+			name: 'Stop cue',
+			type: 'button',
+			style: {
+				text: 'STOP',
+				size: 'auto',
+				color: 0xffffff,
+				bgcolor: 0xc62828,
+			},
+			steps: [{ down: [{ actionId: 'stopCue', options: {} }], up: [] }],
+			feedbacks: [],
+		},
+		{
+			category: 'SmartCue',
+			name: 'Mute cue',
+			type: 'button',
+			style: {
+				text: 'MUTE\\nCUE',
+				size: 'auto',
+				color: 0xffffff,
+				bgcolor: 0xe65100,
+			},
+			steps: [{ down: [{ actionId: 'muteCue', options: { cueNumber: 1 } }], up: [] }],
+			feedbacks: [],
+		},
+		{
+			category: 'SmartCue',
+			name: 'Master mute',
+			type: 'button',
+			style: {
+				text: 'MASTER\\nMUTE',
+				size: 'auto',
+				color: 0xffffff,
+				bgcolor: 0x1565c0,
+			},
+			steps: [{ down: [{ actionId: 'masterMute', options: {} }], up: [] }],
+			feedbacks: [],
+		},
+		{
+			category: 'SmartCue',
+			name: 'PANIC',
+			type: 'button',
+			style: {
+				text: 'PANIC\\n!',
+				size: 'auto',
+				color: 0xffffff,
+				bgcolor: 0x000000,
+			},
+			steps: [{ down: [{ actionId: 'panic', options: {} }], up: [] }],
+			feedbacks: [],
+		},
+		{
+			category: 'SmartCue - Time',
+			name: 'Hours (HH)',
+			type: 'button',
+			style: {
+				text: 'HH\\n$(smartcue:hh)',
+				size: 'auto',
+				color: 0xffffff,
+				bgcolor: 0x222222,
+			},
+			steps: [],
+			feedbacks: [],
+		},
+		{
+			category: 'SmartCue - Time',
+			name: 'Minutes (MM)',
+			type: 'button',
+			style: {
+				text: 'MM\\n$(smartcue:mm)',
+				size: 'auto',
+				color: 0xffffff,
+				bgcolor: 0x222222,
+			},
+			steps: [],
+			feedbacks: [],
+		},
+		{
+			category: 'SmartCue - Time',
+			name: 'Seconds (SS)',
+			type: 'button',
+			style: {
+				text: 'SS\\n$(smartcue:ss)',
+				size: 'auto',
+				color: 0xffffff,
+				bgcolor: 0x222222,
+			},
+			steps: [],
+			feedbacks: [],
+		},
+		{
+			category: 'SmartCue - Time',
+			name: 'Status',
+			type: 'button',
+			style: {
+				text: '$(smartcue:status)',
+				size: 'auto',
+				color: 0xffffff,
+				bgcolor: 0x000000,
+			},
+			steps: [],
+			feedbacks: [],
+		},
+	]
+}

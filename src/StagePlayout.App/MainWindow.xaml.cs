@@ -5,8 +5,10 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Microsoft.Win32;
+using System.Windows.Media.Imaging;
 using StagePlayout.App.Services;
 using StagePlayout.App.Video;
 using StagePlayout.Core.Models;
@@ -46,6 +48,8 @@ public partial class MainWindow : Window
         public double X, Y, W, H;
     }
     private bool _masterMuted;
+    private string _masterAudioDevice = "";
+    private int _oscTick;
     private readonly LayerState[] _layers =
     {
         null!, // índice 0 não usado
@@ -65,6 +69,28 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        App.ApplyDarkMode(this);
+
+        // Set window icon from SVG logo
+        Loaded += (_, _) =>
+        {
+            try
+            {
+                var svg = new SharpVectors.Converters.SvgViewbox
+                {
+                    Source = new Uri("pack://application:,,,/Assets/app-icon.svg"),
+                    Width = 48, Height = 48
+                };
+                // Force layout
+                svg.Measure(new Size(48, 48));
+                svg.Arrange(new Rect(0, 0, 48, 48));
+                svg.UpdateLayout();
+                var bmp = new RenderTargetBitmap(48, 48, 96, 96, PixelFormats.Pbgra32);
+                bmp.Render(svg);
+                Icon = bmp;
+            }
+            catch { }
+        };
 
         // view com filtro: filhos de grupos colapsados ficam escondidos
         _cuesView = System.Windows.Data.CollectionViewSource.GetDefaultView(_playlist.Cues);
@@ -178,10 +204,11 @@ public partial class MainWindow : Window
             cue.Duration = TimeSpan.FromTicks(incoming.DurationTicks);
 
         comp.SetSource(newSlot, incoming);
-        comp.SetGeometry(newSlot, 0, 0, 1, 1);
+        ApplyFillGeometry(cue, incoming, comp, newSlot);
         comp.SetZ(newSlot, gen);            // o mais recente desenha por cima
         comp.SetOpacity(newSlot, 0, 0);
         ApplyVolumes();                     // respeita master mute
+        if (cue.IsAudioMuted) incoming.Volume = 0; // per-cue mute
         incoming.Play();
         comp.SetOpacity(newSlot, 1, cue.FadeInSeconds);   // fade-in
         // (layers têm prioridade fixa no draw order do compositor)
@@ -266,6 +293,18 @@ public partial class MainWindow : Window
                     break;
                 // HoldLastFrame: fica parado no último frame (nada a fazer)
                 // Loop: tratado internamente pelo decoder
+            }
+
+            // Jump to specific cue if set
+            if (cue.NextCueId != Guid.Empty)
+            {
+                var target = _playlist.Cues.FirstOrDefault(c => c.Id == cue.NextCueId);
+                if (target is not null)
+                {
+                    var idx = _playlist.Cues.IndexOf(target);
+                    if (idx >= 0 && _playlist.Select(idx) is not null)
+                        TransitionTo(target);
+                }
             }
         });
     }
@@ -362,6 +401,8 @@ public partial class MainWindow : Window
         if (live is null)
         {
             UpdateBigRemaining(null);
+            if (++_oscTick % 4 == 0)
+                _companion.SendRemainingTime(null, "STANDBY");
             return;
         }
 
@@ -371,6 +412,10 @@ public partial class MainWindow : Window
         TxtTime.Text = $"{cur:hh\\:mm\\:ss} / -{remaining:hh\\:mm\\:ss}";
 
         UpdateBigRemaining(live.DurationTicks > 0 ? remaining : null);
+
+        // OSC feedback: remaining time (1x por segundo)
+        if (++_oscTick % 4 == 0)
+            _companion.SendRemainingTime(live.DurationTicks > 0 ? remaining : null, "ON AIR");
 
         if (current is not null)
         {
@@ -385,6 +430,18 @@ public partial class MainWindow : Window
         // loop pode ser ligado/desligado em direto (loop nativo no decoder)
         if (current is not null)
             live.Loop = current.End == CueEnd.Loop;
+
+        // update audio VU peaks from decoder (simple pulse for now)
+        if (current is not null && current.HasAudio && live.State == DecoderState.Playing)
+        {
+            var rng = new Random();
+            current.AudioPeakL = Math.Max(2, current.AudioPeakL * 0.8 + rng.NextDouble() * 6);
+            current.AudioPeakR = Math.Max(2, current.AudioPeakR * 0.8 + rng.NextDouble() * 6);
+        }
+        else if (current is not null)
+        {
+            current.AudioPeakL = current.AudioPeakR = 0;
+        }
     }
 
     // ===== Companion / Stream Deck (OSC) =====
@@ -414,6 +471,25 @@ public partial class MainWindow : Window
         });
         _companion.MasterMuteRequested += (_, muted) => Dispatcher.Invoke(() => SetMasterMute(muted));
         _companion.MasterMuteToggleRequested += (_, _) => Dispatcher.Invoke(() => SetMasterMute(!_masterMuted));
+        _companion.CueMuteToggleRequested += (_, n) => Dispatcher.Invoke(() =>
+        {
+            if (n >= 1 && n <= _playlist.Cues.Count)
+            {
+                var cue = _playlist.Cues[n - 1];
+                cue.IsAudioMuted = !cue.IsAudioMuted;
+                ApplyCueAudioMute(cue);
+            }
+        });
+        _companion.PanicRequested += (_, _) => Dispatcher.Invoke(() =>
+        {
+            // eject all cues
+            StopPlayback();
+            foreach (var c in _playlist.Cues)
+            {
+                c.IsLive = false;
+                c.Progress = 0;
+            }
+        });
         _companion.LayerMuteRequested += (_, t) => Dispatcher.Invoke(() =>
         {
             if (t.Layer is 1 or 2) SetLayerMute(t.Layer, t.Muted);
@@ -459,6 +535,14 @@ public partial class MainWindow : Window
             {
                 ProjectStore.Load(_playlist, dlg.FileName);
 
+                // ensure all cues have display IDs
+                foreach (var c in _playlist.Cues)
+                    if (c.DisplayId == 0) c.DisplayId = Cue.NextDisplayId();
+
+                // resolve jump target display IDs after loading
+                foreach (var c in _playlist.Cues)
+                    c.JumpTargetId = _playlist.Cues.FirstOrDefault(x => x.Id == c.NextCueId)?.DisplayId ?? 0;
+
                 // normaliza paths curtos 8.3 (projetos gravados com eles)
                 foreach (var c in _playlist.Cues.Where(c => !c.IsGroup))
                 {
@@ -487,6 +571,35 @@ public partial class MainWindow : Window
     }
 
     // ===== Grupos / playlists =====
+
+    private void JumpToCue_SubmenuOpened(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem parent) return;
+        parent.Items.Clear();
+
+        var current = (parent.DataContext ?? CueList.SelectedItem) as Cue;
+
+        // "None" option to clear
+        var noneItem = new MenuItem { Header = "— Follow playlist order —", IsCheckable = true, IsChecked = current?.NextCueId == Guid.Empty };
+        noneItem.Click += (_, _) => { if (current is not null) { current.End = CueEnd.HoldLastFrame; current.NextCueId = Guid.Empty; current.JumpTargetId = 0; } };
+        parent.Items.Add(noneItem);
+        parent.Items.Add(new Separator());
+
+        foreach (var c in _playlist.Cues)
+        {
+            if (c.Id == current?.Id) continue;
+            var item = new MenuItem { Tag = c, IsCheckable = true, IsChecked = current?.NextCueId == c.Id };
+            var sp = new StackPanel { Orientation = Orientation.Horizontal };
+            sp.Children.Add(new Border { Width = 10, Height = 10, CornerRadius = new CornerRadius(2), Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(c.TagColor)), Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center });
+            sp.Children.Add(new TextBlock { Text = $"{c.DisplayId}  {c.Name}", VerticalAlignment = VerticalAlignment.Center });
+            item.Header = sp;
+            item.Click += (_, _) =>
+            {
+                if (current is not null) { current.End = CueEnd.JumpTo; current.NextCueId = c.Id; current.JumpTargetId = c.DisplayId; }
+            };
+            parent.Items.Add(item);
+        }
+    }
 
     private void GroupSelection_Click(object sender, RoutedEventArgs e)
     {
@@ -587,6 +700,7 @@ public partial class MainWindow : Window
             Task.Run(() =>
             {
                 var bmp = c.Thumbnail is null ? ShellThumbnail.Get(c.FilePath) : null;
+
                 MediaInfo? info = c.InfoText.Length == 0 ? MediaInfoReader.Read(c.FilePath) : null;
 
                 if (bmp is null && info is null) return;
@@ -605,7 +719,8 @@ public partial class MainWindow : Window
                                 : $"{mi.Fps:0.00}fps");
                         }
                         if (mi.VideoCodec.Length > 0) parts.Add(mi.VideoCodec);
-                        if (mi.AudioCodec.Length > 0) parts.Add(mi.AudioCodec);
+                        if (mi.AudioCodec.Length > 0) { parts.Add(mi.AudioCodec); c.HasAudio = true; }
+                        else c.HasAudio = false;
                         if (mi.FileSizeBytes > 0) parts.Add(FmtSize(mi.FileSizeBytes));
                         c.InfoText = string.Join(" • ", parts);
 
@@ -615,6 +730,46 @@ public partial class MainWindow : Window
                 });
             });
         }
+    }
+
+    private void ExtractThumb(Cue cue, int maxW, int maxH)
+    {
+        Task.Run(() =>
+        {
+            var dec = new FFDecoder();
+            try
+            {
+                // autoPlay false = PreRollFirstFrame decodes frame 0 synchronously
+                if (!dec.Open(cue.FilePath, autoPlay: false)) { dec.Dispose(); return; }
+                // after Open + PreRollFirstFrame, frame 0 should be decoded already
+                if (dec.FrameWidth == 0) { dec.Dispose(); return; }
+                int w, h, stride;
+                byte[] copy;
+                lock (dec.FrameLock)
+                {
+                    w = dec.FrameWidth; h = dec.FrameHeight; stride = dec.FrameStride;
+                    var src = dec.FrameData;
+                    if (src is null || src.Length == 0) { dec.Dispose(); return; }
+                    copy = new byte[src.Length];
+                    Buffer.BlockCopy(src, 0, copy, 0, src.Length);
+                }
+                dec.Dispose();
+                Dispatcher.BeginInvoke(() =>
+                {
+                    try
+                    {
+                        var bmp = BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgra32, null, copy, w * 4);
+                        bmp.Freeze();
+                        cue.Thumbnail = bmp;
+                    }
+                    catch { }
+                });
+            }
+            catch
+            {
+                try { dec.Dispose(); } catch { }
+            }
+        });
     }
 
     private static string FmtSize(long bytes)
@@ -834,7 +989,19 @@ public partial class MainWindow : Window
         _closingSlots.Add(_liveSlot);
         comp.SetOpacity(_liveSlot, 0, fadeOut);
         _liveSlot = -1;
+        _standbyCue = null;
         BtnPause.Content = "PAUSE";
+
+        // eject
+        _playlist.Deselect();
+        foreach (var c in _playlist.Cues)
+        {
+            c.IsLive = false;
+            c.Progress = 0;
+            if (!c.IsGroup) c.TimeText = Cue.Fmt(c.Duration);
+        }
+        TxtTime.Text = "--:--:-- / --:--:--";
+        UpdateBigRemaining(null);
     }
 
     private void BtnPause_Click(object sender, RoutedEventArgs e) => TogglePause();
@@ -1012,7 +1179,10 @@ public partial class MainWindow : Window
 
 
     private void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        => ApplyVolumes();
+    {
+        if (TxtVolume is not null) TxtVolume.Text = $"{e.NewValue:F0}%";
+        ApplyVolumes();
+    }
 
     /// <summary>Fonte única de volumes: master mute + mute por layer.</summary>
     private void ApplyVolumes()
@@ -1031,12 +1201,12 @@ public partial class MainWindow : Window
     }
 
     private void MasterMute_Click(object sender, RoutedEventArgs e)
-        => SetMasterMute(BtnMasterMute.IsChecked != true);
+        => SetMasterMute(!_masterMuted);
 
     private void SetMasterMute(bool muted)
     {
         _masterMuted = muted;
-        BtnMasterMute.IsChecked = !muted;
+        BtnMasterMute.Content = muted ? "\U0001F507" : "\U0001F50A";
         ApplyVolumes();
     }
 
@@ -1057,6 +1227,14 @@ public partial class MainWindow : Window
 
     private void CueList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
+        // Only respond to double-click on thumbnail or name area (left ~75% of item)
+        var item = CueList.ContainerFromElement((DependencyObject)e.OriginalSource) as ListBoxItem;
+        if (item is not null)
+        {
+            var pos = e.GetPosition(item);
+            if (pos.X > item.ActualWidth * 0.50) return;
+        }
+
         if (CueList.SelectedItem is not Cue c) return;
 
         var target = c;
@@ -1083,9 +1261,16 @@ public partial class MainWindow : Window
             CueList.ScrollIntoView(cue);
         }
 
-        TxtNowPlaying.Text = _playlist.Current is { } cur
-            ? $"CUED: {cur.Name}"
-            : "Nenhum cue carregado";
+        if (_playlist.Current is { } cur)
+        {
+            TxtNowPlaying.Text = $" ON AIR - {cur.Name}";
+            TxtNowPlaying.Foreground = new SolidColorBrush(Color.FromRgb(0xE5, 0x39, 0x35)); // red
+        }
+        else
+        {
+            TxtNowPlaying.Text = "No cue loaded";
+            TxtNowPlaying.Foreground = FindResource("TextMutedBrush") as Brush ?? Brushes.Gray;
+        }
         UpdateStatus();
     }
 
@@ -1106,7 +1291,7 @@ public partial class MainWindow : Window
         _output.Closed += (_, _) =>
         {
             _output = null;
-            BtnOutput.Content = "Abrir output";
+            BtnOutput.Content = " External Display ON ";
         };
 
         var screens = System.Windows.Forms.Screen.AllScreens;
@@ -1155,7 +1340,7 @@ public partial class MainWindow : Window
             ApplyVolumes(); // respeita mutes
         }));
 
-        BtnOutput.Content = "Fechar output";
+        BtnOutput.Content = " External Display OFF ";
     }
 
     // ===== Estado / atalhos =====
@@ -1197,5 +1382,231 @@ public partial class MainWindow : Window
         _layers[2]?.Decoder?.Dispose();
         _output?.Close();
         base.OnClosed(e);
+    }
+
+    // ─── Inline cue buttons ───
+    private void InlinePlay_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if ((sender as Button)?.Tag is Cue cue)
+        {
+            var idx = _playlist.Cues.IndexOf(cue);
+            if (idx >= 0) { _playlist.Select(idx); Go(); }
+        }
+    }
+
+    private void InlineStop_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (_liveSlot >= 0) StopPlayback();
+    }
+
+    private void InlinePause_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if ((sender as Button)?.Tag is Cue cue && _liveSlot >= 0)
+        {
+            var liveCue = _playlist.Current;
+            if (liveCue?.Id == cue.Id) TogglePause();
+        }
+    }
+
+    private void InlineRewind_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (_liveSlot < 0) return;
+
+        var cue = _playlist.Current;
+        StopPlayback();
+
+        if (cue is not null)
+        {
+            _playlist.Select(_playlist.Cues.IndexOf(cue));
+            _standbyCue = cue;
+            _standbyDec?.Dispose();
+            _standbyDec = null;
+
+            var dec = new FFDecoder();
+            Task.Run(() =>
+            {
+                if (!dec.Open(cue.FilePath, autoPlay: false))
+                {
+                    dec.Dispose();
+                    return;
+                }
+                Dispatcher.BeginInvoke(() =>
+                {
+                    if (_standbyCue?.Id != cue.Id) { dec.Dispose(); return; }
+                    _standbyDec = dec;
+                    UpdateStatus();
+                });
+            });
+        }
+    }
+
+    private void TagColor_RightClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        if ((sender as Border)?.Tag is not Cue cue) return;
+
+        var colors = new[] { "#E53935", "#FF9800", "#FFC107", "#4CAF50", "#2196F3", "#9C27B0", "#00BCD4", "#795548" };
+        var names = new[] { "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Cyan", "Brown" };
+        var menu = new ContextMenu();
+        for (int i = 0; i < colors.Length; i++)
+        {
+            var clr = colors[i];
+            var sp = new StackPanel { Orientation = Orientation.Horizontal };
+            sp.Children.Add(new Border { Width = 14, Height = 14, CornerRadius = new CornerRadius(3),
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(clr)),
+                Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center });
+            sp.Children.Add(new TextBlock { Text = names[i], VerticalAlignment = VerticalAlignment.Center });
+            var item = new MenuItem { Header = sp };
+            item.Click += (_, _) => cue.TagColor = clr;
+            menu.Items.Add(item);
+        }
+        menu.IsOpen = true;
+    }
+
+    private void InlineMute_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if ((sender as Button)?.Tag is Cue cue)
+        {
+            cue.IsAudioMuted = !cue.IsAudioMuted;
+            ApplyCueAudioMute(cue);
+        }
+    }
+
+    private void AudioOutput_RightClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        if ((sender as Button)?.Tag is not Cue cue) return;
+
+        var menu = new ContextMenu();
+        var defaultItem = new MenuItem { Header = "System Default", IsCheckable = true, IsChecked = string.IsNullOrEmpty(cue.AudioOutputDevice) };
+        defaultItem.Click += (_, _) => cue.AudioOutputDevice = "";
+        menu.Items.Add(defaultItem);
+        menu.Items.Add(new Separator());
+
+        var devices = AudioDeviceService.GetOutputDevices();
+        foreach (var (id, name) in devices)
+        {
+            var item = new MenuItem { Header = name, IsCheckable = true, IsChecked = cue.AudioOutputDevice == id };
+            var devId = id;
+            item.Click += (_, _) => cue.AudioOutputDevice = devId;
+            menu.Items.Add(item);
+        }
+        menu.IsOpen = true;
+    }
+
+    private void MasterAudioDevice_RightClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        var menu = new ContextMenu();
+
+        var defaultItem = new MenuItem { Header = "System Default", IsCheckable = true, IsChecked = string.IsNullOrEmpty(_masterAudioDevice) };
+        defaultItem.Click += (_, _) => _masterAudioDevice = "";
+        menu.Items.Add(defaultItem);
+        menu.Items.Add(new Separator());
+
+        var devices = AudioDeviceService.GetOutputDevices();
+        foreach (var (id, name) in devices)
+        {
+            var item = new MenuItem { Header = name, IsCheckable = true, IsChecked = _masterAudioDevice == id };
+            var devId = id;
+            item.Click += (_, _) => _masterAudioDevice = devId;
+            menu.Items.Add(item);
+        }
+        menu.IsOpen = true;
+    }
+
+    private void InlineFillMode_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if ((sender as Button)?.Tag is not Cue cue) return;
+
+        cue.FillMode = cue.FillMode == "Uniform" ? "Fill" : "Uniform";
+
+        // update the SVG icon
+        if (sender is Button btn && btn.Content is SharpVectors.Converters.SvgViewbox svg)
+        {
+            svg.Source = new Uri(cue.FillMode == "Uniform"
+                ? "pack://application:,,,/Assets/Icons/aspect-ratio.svg"
+                : "pack://application:,,,/Assets/Icons/fit-screen.svg");
+        }
+
+        // if this cue is currently playing, update geometry live
+        if (_liveSlot >= 0 && _playlist.Current?.Id == cue.Id && _output?.Compositor is { } comp)
+        {
+            var dec = _slotDec[_liveSlot];
+            if (dec is not null && dec.FrameWidth > 0)
+                ApplyFillGeometry(cue, dec, comp, _liveSlot);
+        }
+    }
+
+    private void InlineRotation_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if ((sender as Button)?.Tag is not Cue cue) return;
+
+        cue.Rotation = cue.Rotation switch { 0 => 90, 90 => 180, 180 => 270, _ => 0 };
+
+        if (_liveSlot >= 0 && _playlist.Current?.Id == cue.Id && _output?.Compositor is { } comp)
+        {
+            var dec = _slotDec[_liveSlot];
+            if (dec is not null)
+                ApplyFillGeometry(cue, dec, comp, _liveSlot);
+        }
+    }
+
+    private static void ApplyFillGeometry(Cue cue, FFDecoder dec, D3DCompositor comp, int slot)
+    {
+        float x = 0, y = 0, w = 1, h = 1;
+
+        if (cue.FillMode == "Uniform" && dec.FrameWidth > 0 && dec.FrameHeight > 0)
+        {
+            var vidRatio = (double)dec.FrameWidth / dec.FrameHeight;
+            var outRatio = (double)comp.OutputWidth / comp.OutputHeight;
+            if (vidRatio > outRatio)
+            {
+                h = (float)(outRatio / vidRatio);
+                y = (1f - h) / 2f;
+            }
+            else
+            {
+                w = (float)(vidRatio / outRatio);
+                x = (1f - w) / 2f;
+            }
+        }
+
+        comp.SetGeometry(slot, x, y, w, h);
+        comp.SetRotation(slot, (float)(cue.Rotation * Math.PI / 180.0));
+    }
+
+    private void ApplyCueAudioMute(Cue cue)
+    {
+        if (_liveSlot >= 0 && _playlist.Current?.Id == cue.Id)
+        {
+            var dec = _slotDec[_liveSlot];
+            if (dec is not null)
+                dec.Volume = cue.IsAudioMuted ? 0.0 : 1.0;
+        }
+    }
+
+    private void OutputBadge_RightClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        if ((sender as Border)?.Tag is Cue cue)
+        {
+            var menu = new ContextMenu();
+            for (int i = 1; i <= 4; i++)
+            {
+                var item = new MenuItem { Header = $"Output {i}", IsCheckable = true, IsChecked = cue.Output == i };
+                var idx = i; // capture
+                item.Click += (_, _) => cue.Output = idx;
+                menu.Items.Add(item);
+            }
+            menu.IsOpen = true;
+        }
     }
 }

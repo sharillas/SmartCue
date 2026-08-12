@@ -1,0 +1,29 @@
+{
+	"name": "smartcue",
+	"version": "1.0.0",
+	"main": "main.js",
+	"type": "module",
+	"manufacturer": "SmartChoice",
+	"product": ["SmartCue"],
+	"shortname": "smartcue",
+	"description": "Controlo do SmartCue (video playout) via OSC",
+	"keywords": ["video", "playout", "smartcue"],
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/smartchoice/smartcue-companion.git"
+	},
+	"bugs": {
+		"url": "https://github.com/smartchoice/smartcue-companion/issues"
+	},
+	"homepage": "https://github.com/smartchoice/smartcue-companion#readme",
+	"engines": {
+		"node": ">=18"
+	},
+	"dependencies": {
+		"@companion-module/base": "~2.3.4"
+	},
+	"devDependencies": {
+		"@companion-module/tools": "^1.5.0"
+	}
+}
